@@ -75,6 +75,9 @@ AEKO_FAST_MODEL = os.getenv("AEKO_FAST_MODEL")
 AEKO_SLOW_MODEL = os.getenv("AEKO_SLOW_MODEL")
 AEKO_MAX_TOKENS = os.getenv("AEKO_MAX_TOKENS")
 AEKO_REPORT_MAX_TOKENS = os.getenv("AEKO_REPORT_MAX_TOKENS")
+AEKO_TEMPERATURE = os.getenv("AEKO_TEMPERATURE")
+AEKO_TOP_P = os.getenv("AEKO_TOP_P")
+AEKO_TOP_K = os.getenv("AEKO_TOP_K")
 
 
 TAVILY_SITE_MAP_TOOLS = [AekoTool(tool=tool) for tool in get_tavily_site_map_tool()]
@@ -138,6 +141,10 @@ db = None
 
 def _int_or_none(value: str | None) -> int | None:
     return int(value) if value else None
+
+
+def _float_or_none(value: str | None) -> float | None:
+    return float(value) if value else None
 
 
 def _warm_up_mcp_sessions() -> None:
@@ -320,6 +327,9 @@ async def lifespan(app: FastAPI):
         slow_model=AEKO_SLOW_MODEL,
         max_tokens=_int_or_none(AEKO_MAX_TOKENS),
         report_max_tokens=_int_or_none(AEKO_REPORT_MAX_TOKENS),
+        temperature=_float_or_none(AEKO_TEMPERATURE),
+        top_p=_float_or_none(AEKO_TOP_P),
+        top_k=_int_or_none(AEKO_TOP_K),
     )
     AekoMessenger.set_tools(AEKO_TOOLS)
 

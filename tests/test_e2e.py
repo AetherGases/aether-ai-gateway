@@ -226,6 +226,9 @@ def test_lifespan_configures_the_sdk_from_environment(live_app, fake_sdk):
             "slow_model": "slow-model",
             "max_tokens": 512,
             "report_max_tokens": 4096,
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "top_k": 40,
         }
     ]
     assert fake_sdk.Aeko.is_configured() is True
