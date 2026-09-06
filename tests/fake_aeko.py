@@ -215,7 +215,9 @@ class Aeko:
 
     @staticmethod
     def config(api_key: str, *, fast_model: str | None = None, slow_model: str | None = None,
-               max_tokens: int | None = None, report_max_tokens: int | None = None) -> None:
+               max_tokens: int | None = None, report_max_tokens: int | None = None,
+               temperature: float | None = None, top_p: float | None = None,
+               top_k: int | None = None) -> None:
         """Configure the simulated SDK runtime from the supplied settings."""
         if not api_key or not isinstance(api_key, str):
             raise AekoNotConfiguredError("Aeko.config() requires a non-empty API key.")
@@ -227,6 +229,9 @@ class Aeko:
                 "slow_model": slow_model,
                 "max_tokens": max_tokens,
                 "report_max_tokens": report_max_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "top_k": top_k,
             }
         )
 

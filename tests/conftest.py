@@ -30,6 +30,9 @@ os.environ["AEKO_FAST_MODEL"] = "fast-model"
 os.environ["AEKO_SLOW_MODEL"] = "slow-model"
 os.environ["AEKO_MAX_TOKENS"] = "512"
 os.environ["AEKO_REPORT_MAX_TOKENS"] = "4096"
+os.environ["AEKO_TEMPERATURE"] = "0.2"
+os.environ["AEKO_TOP_P"] = "0.9"
+os.environ["AEKO_TOP_K"] = "40"
 
 
 os.environ["AEKO_MCP_WARM_UP"] = "false"
