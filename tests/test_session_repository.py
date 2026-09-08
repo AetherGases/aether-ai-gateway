@@ -23,6 +23,7 @@ SERVICE_METHODS = [
     "create_session",
     "save_message",
     "update_name",
+    "get_sessions_updated_since",
 ]
 
 SESSION_DOCUMENT = {

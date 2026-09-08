@@ -501,7 +501,7 @@ def test_only_the_entry_point_imports_the_sdk():
         and IMPORTS_THE_SDK.search(path.read_text(encoding="utf-8"))
     )
 
-    assert importers == ["cmd/api/main.py"]
+    assert importers == ["cmd/api/main.py", "cmd/memory_generator_worker/main.py"]
 
 
 def test_journey_user_then_sessions_then_messages(live_app):

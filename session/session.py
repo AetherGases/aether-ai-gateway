@@ -1,6 +1,7 @@
 """Define conversation service and persistence contracts and guardrail errors."""
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from session.entity import Message, Session
 
@@ -43,6 +44,11 @@ class IRepository(ABC):
     @abstractmethod
     def update_name(self, id_session: str, name: str) -> None:
         """Update the session name and modification timestamp."""
+        pass
+
+    @abstractmethod
+    def get_sessions_updated_since(self, since: datetime) -> list[Session]:
+        """Retrieve sessions whose modification time is at or after the supplied instant."""
         pass
 
 class IService(ABC):
