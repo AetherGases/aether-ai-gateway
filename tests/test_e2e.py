@@ -414,9 +414,11 @@ def test_lifespan_pings_the_database_and_closes_the_client(api_main):
     with TestClient(api_main.app):
         pass
     client = api_main.MongoClient.instances[-1]
+    redis = api_main.Redis.instances[-1]
 
     assert client.database.commands == ["ping"]
     assert client.closed is True
+    assert redis.closed is True
 
 
 class FakeMCPSession:

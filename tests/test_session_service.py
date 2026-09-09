@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from session.entity import Message, Session
+from session.entity import Message, Session, SessionWindow
 from session.service import Service
 from session.session import GuardrailRejectedError, IService
 from internal.shared.event_tracking import bind_id_request, set_aeko_metrics_sink, unbind_id_request
@@ -138,6 +138,7 @@ class FakeSessionRepository:
         self.saved = []
         self.names = {}
         self.created_for = []
+        self.message_lookups = []
 
     def _guard(self):
         if self.error is not None:
@@ -159,6 +160,7 @@ class FakeSessionRepository:
     def get_session_messages(self, id_session):
         """Retrieve the stored messages for a session."""
         self._guard()
+        self.message_lookups.append(id_session)
         return self.messages.get(id_session, [])
 
     def get_session_messages_count(self, id_session):
@@ -207,10 +209,38 @@ class StubUserRepository:
         self.memories.append(user_memory)
 
 
-def build_service(**kwargs):
+class StubCacheRepository:
+    def __init__(self, windows=None):
+        self.windows = dict(windows or {})
+        self.activity = {}
+        self.get_window_calls = []
+
+    def get_window(self, id_session):
+        """Retrieve the stored conversation window for a session."""
+        self.get_window_calls.append(id_session)
+        return self.windows.get(id_session)
+
+    def set_window(self, id_session, id_user, messages):
+        """Persist the current conversation window for a session."""
+        self.windows[id_session] = SessionWindow(id_user, list(messages))
+
+    def set_activity(self, id_session, ttl_seconds):
+        """Refresh the inactivity marker for a session."""
+        self.activity[id_session] = ttl_seconds
+
+    def delete_window(self, id_session):
+        """Remove the stored conversation window for a session."""
+        self.windows.pop(id_session, None)
+
+    def list_expired_windows(self):
+        """Return session identifiers whose activity key expired while a window remains."""
+        return []
+
+
+def build_service(cache_repository=None, inactivity_minutes=20, **kwargs):
     """Build a domain service with configurable repository doubles."""
     repository = FakeSessionRepository(**kwargs)
-    return Service(repository), repository
+    return Service(repository, cache_repository, inactivity_minutes=inactivity_minutes), repository
 
 
 @pytest.fixture
@@ -394,6 +424,79 @@ def test_send_message_rehydrates_the_conversation_into_the_session():
     send(service, sessions=sessions)
 
     assert [turn.input for turn in sessions.last.messages] == ["Summarize this session."]
+
+
+def test_send_message_prefers_cached_messages_over_mongo():
+    """Verify that send message prefers cached messages over mongo."""
+    mongo_turn = Message(input="mongo", output="stored", submitted_at=SUBMITTED_AT)
+    cached_turn = Message(input="redis", output="window", submitted_at=SUBMITTED_AT)
+    cache = StubCacheRepository(windows={ID_SESSION: SessionWindow(ID_USER, [cached_turn])})
+    sessions = StubSessionFactory()
+    service, repository = build_service(
+        cache_repository=cache,
+        messages={ID_SESSION: [mongo_turn]},
+    )
+
+    send(service, sessions=sessions)
+
+    assert [turn.input for turn in sessions.last.messages] == ["redis"]
+    assert repository.message_lookups == []
+
+
+def test_send_message_falls_back_to_mongo_when_the_cache_is_empty():
+    """Verify that send message falls back to mongo when the cache is empty."""
+    mongo_turn = Message(input="mongo", output="stored", submitted_at=SUBMITTED_AT)
+    cache = StubCacheRepository(windows={ID_SESSION: SessionWindow(ID_USER, [])})
+    sessions = StubSessionFactory()
+    service, repository = build_service(
+        cache_repository=cache,
+        messages={ID_SESSION: [mongo_turn]},
+    )
+
+    send(service, sessions=sessions)
+
+    assert [turn.input for turn in sessions.last.messages] == ["mongo"]
+    assert repository.message_lookups == [ID_SESSION]
+
+
+def test_send_message_falls_back_to_mongo_when_the_cache_has_no_window():
+    """Verify that send message falls back to mongo when the cache has no window."""
+    mongo_turn = Message(input="mongo", output="stored", submitted_at=SUBMITTED_AT)
+    cache = StubCacheRepository()
+    sessions = StubSessionFactory()
+    service, _ = build_service(
+        cache_repository=cache,
+        messages={ID_SESSION: [mongo_turn]},
+    )
+
+    send(service, sessions=sessions)
+
+    assert [turn.input for turn in sessions.last.messages] == ["mongo"]
+
+
+def test_send_message_refreshes_the_cached_window_after_the_turn():
+    """Verify that send message refreshes the cached window after the turn."""
+    cached_turn = Message(input="redis", output="window", submitted_at=SUBMITTED_AT)
+    cache = StubCacheRepository(windows={ID_SESSION: SessionWindow(ID_USER, [cached_turn])})
+    service, _ = build_service(cache_repository=cache, inactivity_minutes=20)
+
+    message = send(service)
+
+    window = cache.windows[ID_SESSION]
+    assert [turn.input for turn in window.messages] == ["redis", message.input]
+    assert cache.activity[ID_SESSION] == 1200
+
+
+def test_send_message_does_not_refresh_the_cache_when_the_turn_is_rejected():
+    """Verify that send message does not refresh the cache when the turn is rejected."""
+    cache = StubCacheRepository()
+    service, _ = build_service(cache_repository=cache)
+
+    with pytest.raises(GuardrailRejectedError):
+        send(service, messengers=StubMessengerFactory(approved=False))
+
+    assert cache.windows == {}
+    assert cache.activity == {}
 
 
 def test_send_message_hands_over_only_the_memories_that_are_still_valid():

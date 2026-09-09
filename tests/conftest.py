@@ -25,6 +25,7 @@ sys.modules.setdefault("aeko", fake_aeko)
 
 os.environ["MONGO_URI"] = "mongodb://fake-host:27017"
 os.environ["DB_NAME"] = "aeko_test"
+os.environ["REDIS_URI"] = "redis://fake-host:6379/0"
 os.environ["GEMINI_API_KEY"] = "test-gemini-key"
 os.environ["AEKO_FAST_MODEL"] = "fast-model"
 os.environ["AEKO_SLOW_MODEL"] = "slow-model"
@@ -102,6 +103,60 @@ class FakeMongoClient:
         self.closed = True
 
 
+class FakeRedis:
+    """Drop-in replacement for `redis.Redis` in the app lifespan."""
+
+    instances = []
+
+    def __init__(self, url=None):
+        self.url = url
+        self.values = {}
+        self.expirations = {}
+        self.closed = False
+        FakeRedis.instances.append(self)
+
+    @classmethod
+    def from_url(cls, url):
+        """Create a simulated Redis client from a connection URI."""
+        return cls(url)
+
+    def ping(self):
+        """Report that the simulated Redis instance is reachable."""
+        return True
+
+    def get(self, key):
+        """Return the stored value for a key."""
+        return self.values.get(key)
+
+    def set(self, key, value, ex=None):
+        """Store a value and optionally mark it for expiry simulation."""
+        self.values[key] = value
+        if ex is None:
+            self.expirations.pop(key, None)
+        else:
+            self.expirations[key] = ex
+
+    def exists(self, key):
+        """Return whether a key is present."""
+        return 1 if key in self.values else 0
+
+    def delete(self, key):
+        """Remove a key from the simulated store."""
+        self.values.pop(key, None)
+        self.expirations.pop(key, None)
+
+    def scan_iter(self, match=None, count=None):
+        """Yield keys that match the supplied pattern."""
+        prefix, suffix = match.split("*", 1)
+        for key in list(self.values):
+            if key.startswith(prefix) and key.endswith(suffix):
+                yield key
+
+    def close(self):
+        """Record closure of the simulated resource."""
+        self.closed = True
+
+
 @pytest.fixture(autouse=True)
 def no_event_sink():
     """Clear metric sinks around each test."""
@@ -135,7 +190,9 @@ def configured_sdk(reset_aeko_runtime):
 def api_main(monkeypatch):
     """Import the API entry point with isolated database and SDK dependencies."""
     FakeMongoClient.instances = []
+    FakeRedis.instances = []
     module = importlib.import_module("cmd.api.main")
     module = importlib.reload(module)
     monkeypatch.setattr(module, "MongoClient", FakeMongoClient)
+    monkeypatch.setattr(module, "Redis", FakeRedis)
     return module

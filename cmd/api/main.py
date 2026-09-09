@@ -2,7 +2,7 @@
 
 This is the only module that imports the SDK. Configuration is captured after
 loading the environment; the application lifespan initializes the database,
-agent tools, and metric sinks and closes database and MCP connections.
+cache, agent tools, and metric sinks and closes database, cache, and MCP connections.
 """
 
 from contextlib import asynccontextmanager
@@ -12,6 +12,7 @@ import threading
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from pymongo import MongoClient
+from redis import Redis
 
 from cmd.api.integrations.climatiq_api import get_climatiq_tools
 from cmd.api.integrations.mcp.chroma_mcp import CHROMA_SESSION, get_gases_info_tools
@@ -68,6 +69,7 @@ load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = os.getenv("DB_NAME")
+REDIS_URI = os.getenv("REDIS_URI")
 
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -136,6 +138,7 @@ MCP_SESSIONS = (TAVILY_SESSION, MONGO_SESSION, CHROMA_SESSION)
 MCP_WARM_UP = os.getenv("AEKO_MCP_WARM_UP", "true")
 
 mongo_client = None
+redis_client = None
 db = None
 
 
@@ -308,14 +311,17 @@ def build_inventory_analyzer() -> AekoInventoryAnalyzer:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database, SDK tools, and metric sinks, then release connections on shutdown."""
-    global mongo_client, db
+    """Initialize database, cache, SDK tools, and metric sinks, then release connections on shutdown."""
+    global mongo_client, redis_client, db
 
     silence_uvicorn_access_log()
 
     mongo_client = MongoClient(MONGO_URI)
     db = mongo_client[DB_NAME]
     app.state.db = db
+
+    redis_client = Redis.from_url(REDIS_URI)
+    app.state.redis = redis_client
 
     set_event_sink(build_metric_sink(db))
 
@@ -343,6 +349,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         raise RuntimeError(f"Failed to connect to MongoDB: {exc}") from exc
 
+    try:
+        with operation(Module.DATABASE, "redis.ping"):
+            redis_client.ping()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to connect to Redis: {exc}") from exc
+
     if MCP_WARM_UP.strip().lower() not in {"false", "0", "no"}:
         _warm_up_mcp_sessions()
 
@@ -354,6 +366,7 @@ async def lifespan(app: FastAPI):
     for session in MCP_SESSIONS:
         session.close()
 
+    redis_client.close()
     mongo_client.close()
 
 OPENAPI_TAGS = [

@@ -10,8 +10,10 @@ from improvement_plan.database.repository import Repository as ImprovementPlanRe
 from improvement_plan.integration.ms_inventory import Repository as InventoryRepository
 from improvement_plan.service import Service as ImprovementPlanService
 from internal.http import improvement_plan_handlers, session_handlers, user_handlers
+from session.cache.repository import Repository as CacheRepository
 from session.database.repository import Repository as SessionRepository
 from session.service import Service as SessionService
+from tests.conftest import FakeRedis
 from tests.mongo_doubles import StubCollection, StubDatabase
 from user.database.repository import Repository as UserRepository
 from user.service import Service as UserService
@@ -120,6 +122,17 @@ def test_session_dependency_builds_a_service_backed_by_the_concrete_repository()
 
     assert isinstance(service, SessionService)
     assert isinstance(service.repository, SessionRepository)
+    assert service.cache_repository is None
+
+
+def test_session_dependency_injects_the_cache_when_redis_is_configured():
+    """Verify that session dependency injects the cache when redis is configured."""
+    request = request_with(StubDatabase())
+    request.app.state.redis = FakeRedis()
+
+    service = session_handlers.get_session_service(request)
+
+    assert isinstance(service.cache_repository, CacheRepository)
 
 
 def test_report_dependency_builds_a_service_backed_by_the_concrete_repositories():

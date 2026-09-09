@@ -12,8 +12,10 @@ from user.user import IRepository as IUserRepository
 SESSION_NAME_MAX_LENGTH = 60
 
 class Service(IService):
-    def __init__(self, repository):
+    def __init__(self, repository, cache_repository=None, inactivity_minutes=20):
         self.repository = repository
+        self.cache_repository = cache_repository
+        self.inactivity_minutes = inactivity_minutes
 
     def get_user_sessions(self, id_user) -> list[Session]:
         """Retrieve the sessions belonging to a user."""
@@ -42,7 +44,7 @@ class Service(IService):
         aeko_session_factory,
         user_repository: IUserRepository,
     ) -> Message:
-        """Send a conversation turn and persist the approved response with its run metrics."""
+        """Send a conversation turn using the cached window when present, then persist it."""
         try:
             is_new_session = not id_session
             if is_new_session:
@@ -61,7 +63,7 @@ class Service(IService):
             ]
 
             session = self.repository.get_session(id_session)
-            session.messages = self.repository.get_session_messages(id_session)
+            session.messages = self._conversation_messages(id_session)
 
             messenger = aeko_messenger_factory(user, memories)
 
@@ -74,6 +76,7 @@ class Service(IService):
             message = _internal_message_from_aeko_message(response.message)
 
             self.repository.save_message(id_session, message)
+            self._refresh_window(id_session, id_user, session.messages, message)
 
             if is_new_session:
                 self.repository.update_name(id_session, _session_name_from(input))
@@ -83,6 +86,19 @@ class Service(IService):
             raise e
         except Exception as e:
             raise RuntimeError(f"Error sending message: {e}")
+
+    def _conversation_messages(self, id_session: str) -> list[Message]:
+        if self.cache_repository is not None:
+            window = self.cache_repository.get_window(id_session)
+            if window is not None and window.messages:
+                return list(window.messages)
+        return self.repository.get_session_messages(id_session)
+
+    def _refresh_window(self, id_session: str, id_user: str, history: list[Message], message: Message) -> None:
+        if self.cache_repository is None:
+            return
+        self.cache_repository.set_window(id_session, id_user, list(history) + [message])
+        self.cache_repository.set_activity(id_session, self.inactivity_minutes * 60)
 
     def _validate_session_and_user_allowance(self, id_session: str, id_user: str) -> bool:
         try:
