@@ -104,6 +104,16 @@ class Repository(IRepository):
         except Exception as e:
             raise RuntimeError(f"Error updating session name in database: {e}")
 
+    @logged(Module.DATABASE, "session.get_sessions_updated_since")
+    def get_sessions_updated_since(self, since) -> list[Session]:
+        """Retrieve sessions whose modification time is at or after the supplied instant."""
+        try:
+            query, projection = q.get_sessions_updated_since_query(since)
+            sessions_data = self.db["session"].find(query, projection)
+            return [session_from_data(data) for data in sessions_data]
+        except Exception as e:
+            raise RuntimeError(f"Error fetching recently updated sessions from database: {e}")
+
 def message_from_data(data: dict) -> Message:
     """Map a stored message document to a domain message."""
     return Message(

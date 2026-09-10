@@ -1,6 +1,6 @@
 """Define the domain entities for conversations and messages."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class Message:
@@ -31,3 +31,30 @@ class Session:
         self.messages = messages
         self.created_at = created_at
         self.updated_at = updated_at
+
+
+class SessionWindow:
+    """The trailing conversation turns that belong to one inactivity window."""
+
+    id_user: str
+    messages: list[Message]
+
+    def __init__(self, id_user: str, messages: list[Message]):
+        self.id_user = id_user
+        self.messages = messages
+
+    @staticmethod
+    def derive(messages: list[Message], inactivity_minutes: int) -> list[Message]:
+        """Return the final run of messages separated by less than the inactivity threshold."""
+        if not messages:
+            return []
+
+        threshold = timedelta(minutes=inactivity_minutes)
+        window = [messages[-1]]
+        for index in range(len(messages) - 2, -1, -1):
+            gap = messages[index + 1].submitted_at - messages[index].submitted_at
+            if gap >= threshold:
+                break
+            window.insert(0, messages[index])
+        return window
+        

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from internal.database.object_id import id_filter, normalize_id
 from user.entity import UserMemory
 
-USER_MEMORY_TTL_DAYS = 12
+USER_MEMORY_TTL_DAYS = 2
 
 
 def get_user_query_filter(id_external_user: int) -> dict:

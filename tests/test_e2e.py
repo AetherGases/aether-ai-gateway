@@ -414,9 +414,11 @@ def test_lifespan_pings_the_database_and_closes_the_client(api_main):
     with TestClient(api_main.app):
         pass
     client = api_main.MongoClient.instances[-1]
+    redis = api_main.Redis.instances[-1]
 
     assert client.database.commands == ["ping"]
     assert client.closed is True
+    assert redis.closed is True
 
 
 class FakeMCPSession:
@@ -501,7 +503,7 @@ def test_only_the_entry_point_imports_the_sdk():
         and IMPORTS_THE_SDK.search(path.read_text(encoding="utf-8"))
     )
 
-    assert importers == ["cmd/api/main.py"]
+    assert importers == ["cmd/api/main.py", "cmd/memory_generator_worker/main.py"]
 
 
 def test_journey_user_then_sessions_then_messages(live_app):

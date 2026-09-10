@@ -13,6 +13,7 @@ import pytest
         "internal/shared",
         "cmd/api/tools",
         "cmd/api/integrations/mcp",
+        "cmd/memory_generator_worker",
         "improvement_plan",
     ],
 )
@@ -46,6 +47,7 @@ def test_package_constants_have_one_definition_module(package):
         ("cmd/api/tools", "CALCULATOR_MAX_EXPRESSION_LENGTH", "200", 200),
         ("cmd/api/integrations/mcp", "DEFAULT_CALL_TIMEOUT", "17.5", 17.5),
         ("improvement_plan", "PREVIOUS_PLANS_FOR_CONTEXT", "4", 4),
+        ("cmd/memory_generator_worker", "SESSION_INACTIVITY_MINUTES", "30", 30),
     ],
 )
 def test_constants_use_environment_overrides(monkeypatch, package, key, value, expected):

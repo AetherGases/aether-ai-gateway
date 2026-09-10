@@ -10,7 +10,7 @@ from typing import Any, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
-__version__ = "3.2.0"
+__version__ = "3.4.0"
 
 
 AGENT_NAMES: tuple[str, ...] = (
@@ -165,6 +165,13 @@ class AekoMessageResponse(BaseModel):
     guardrail_retries: int = Field(default=0, ge=0)
 
 
+class AekoSummaryResponse(BaseModel):
+    """What `generate_summary()` hands back: the summary text and what it cost."""
+
+    summary: str
+    aeko_metrics: AekoMetrics
+
+
 class AekoImprovementPlan(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -301,6 +308,9 @@ class AekoMessenger:
     next_guardrail_retries: int = 0
     next_error: Exception | None = None
     next_latency: int | None = None
+    next_summary: str | None = None
+    next_summary_error: Exception | None = None
+    next_summary_agents: tuple[str, ...] = ("FAQ",)
 
     def __init__(self, user: AekoUser, memories: Sequence[AekoUserMemory] | None = None):
         if not isinstance(user, AekoUser):
@@ -328,6 +338,9 @@ class AekoMessenger:
         cls.next_guardrail_retries = 0
         cls.next_error = None
         cls.next_latency = None
+        cls.next_summary = None
+        cls.next_summary_error = None
+        cls.next_summary_agents = ("FAQ",)
 
     @classmethod
     def set_tools(cls, tools: dict[str, list[Any]]) -> None:
@@ -407,6 +420,50 @@ class AekoMessenger:
 
             approved=True,
             guardrail_retries=type(self).next_guardrail_retries,
+        )
+
+    def generate_summary(self, messages: Sequence[AekoMessage], *,
+                         id_request: str) -> AekoSummaryResponse:
+        """Record the summary call and return or raise its scripted result."""
+        RUNTIME.require_api_key()
+
+        if not isinstance(id_request, str):
+            raise TypeError(
+                f"generate_summary() takes id_request as a string, got {type(id_request).__name__}."
+            )
+
+        for message in messages:
+            if not isinstance(message, AekoMessage):
+                raise TypeError(
+                    f"generate_summary() takes AekoMessage objects, got {type(message).__name__}."
+                )
+
+        if type(self).next_summary_error is not None:
+            error = type(self).next_summary_error
+            raise _fail_with(
+                error,
+                _tracking(
+                    id_request,
+                    CONVERSATIONAL_FLOW,
+                    type(self).next_summary_agents,
+                    f"{type(error).__name__}: {error}",
+                    type(self).next_latency,
+                ),
+            )
+
+        summary = type(self).next_summary
+        if summary is None:
+            summary = " ".join(message.input for message in messages)
+
+        return AekoSummaryResponse(
+            summary=summary,
+            aeko_metrics=_tracking(
+                id_request,
+                CONVERSATIONAL_FLOW,
+                type(self).next_summary_agents,
+                None,
+                type(self).next_latency,
+            ),
         )
 
 

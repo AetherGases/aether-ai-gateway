@@ -7,10 +7,12 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from session.database.repository import Repository
+from session.cache.repository import Repository as CacheRepository
 from session.service import Service
 from session.session import GuardrailRejectedError, IService
 
 from user.database.repository import Repository as UserRepository
+from cmd.memory_generator_worker.constants import REDIS_SCAN_COUNT, SESSION_INACTIVITY_MINUTES
 
 router = APIRouter(tags=["Sessions"])
 
@@ -26,11 +28,19 @@ class MessageResponseData(BaseModel):
     submitted_at: datetime = Field(..., description="Timestamp when the message was submitted.", json_schema_extra={"example": "2026-07-26T14:30:00Z"})
 
 def get_session_service(request: Request) -> IService:
-    """Build the session service from the application database, or raise HTTP 503."""
+    """Build the session service from the application database and cache, or raise HTTP 503."""
     database = request.app.state.db
     if database is None:
         raise HTTPException(status_code=503, detail="Database is not initialized")
-    return Service(Repository(database))
+    redis = getattr(request.app.state, "redis", None)
+    cache_repository = None
+    if redis is not None:
+        cache_repository = CacheRepository(redis, scan_count=REDIS_SCAN_COUNT)
+    return Service(
+        Repository(database),
+        cache_repository,
+        inactivity_minutes=SESSION_INACTIVITY_MINUTES,
+    )
 
 
 @router.get(
